@@ -28,8 +28,8 @@ while getopts "s" opt ;do
 						#Rename pin directory
 						mv pin-* pin
 						
-						sudo apt install python3-pip
-						pip3 install ipython
+						export PIN_ROOT=pin/
+						make
 						;;
 				*)
 						echo "Invalid Option"
