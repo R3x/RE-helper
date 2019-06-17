@@ -6,6 +6,7 @@ usage()
 	echo "Options :  "
 	echo "     -s : Setup"
 	echo "     -m : Make"
+	echo "     -t : Test"
 }
 
 if [ $# -eq 0 ]
@@ -14,7 +15,7 @@ then
 	exit
 fi
 
-while getopts "s" opt ;do
+while getopts "smt" opt ;do
 	case "${opt}" in
 		s)
 			echo "Installing Intel PIN"
@@ -47,6 +48,15 @@ while getopts "s" opt ;do
 			echo "                 Make Completed                  "
 			echo "=================================================="
 			echo " Now run with : pin/pin -t obj/maintrace.so -o <logfile> -- <file to be traced>"
+			;;
+		t)
+			rm -rf out/
+			cd src 
+			export PIN_ROOT=../pin/
+			make
+			mv obj-intel64/ ../out
+			cd ..
+			./pin/pin -t out/main_trace.so -o out.log -- test/basic1/basic1 
 			;;
 		*)
 			echo "Invalid Option"
