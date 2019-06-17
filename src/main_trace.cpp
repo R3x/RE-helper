@@ -4,16 +4,23 @@
 #include <fstream>
 #include <list>
 
+#define TRACE_MAX 100
+
 /*
  * VARIABLES
  */
 
 std::ofstream TraceFile;
+std::ofstream StatusFile;
 
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
 				"o", "trace.out", "specify trace file name");
 
 static unsigned int sys_lock;
+static bool status_lock;
+static bool status_flag;
+static unsigned int status_ctr;
+
 /*
  * STRUCTURES FOR TAINTING
  */
@@ -22,12 +29,18 @@ static unsigned int sys_lock;
 struct range
 {
 		UINT64 start;
-		UINT64 end;
+		UINT64 size;
 };
 
 std::list<struct range> bytesTainted;
 std::list<UINT64> addressTainted;
 std::list<REG> regsTainted;
+
+enum {
+MODE_READ,
+MODE_WRITE,
+MODE_FOLLOW,
+MODE_MAX };
 
 /*
  * PIN BASED FUNCTIONS  
@@ -67,16 +80,31 @@ bool checkAlreadyRegTainted(REG reg)
 			  return false;
 }
 
+bool addressinlibc(UINT64 addr)
+{
+		/*
+		 * NOTE - this technique is really crude - figure out a better alternative
+		 */  
+		if (addr > 0x70000000000) {
+			return true;
+		}
+		return false;
+}
+
 VOID removeMemTainted(UINT64 addr)
 {
 		  addressTainted.remove(addr);
 		    std::cout << std::hex << "\t\t\t" << addr << " is now freed" << std::endl;
+		// status flag 
+		status_flag = true;
 }
 
 VOID addMemTainted(UINT64 addr)
 {
 		  addressTainted.push_back(addr);
 		    std::cout << std::hex << "\t\t\t" << addr << " is now tainted" << std::endl;
+		// status flag 
+		status_flag = true;
 }
 
 
@@ -134,6 +162,8 @@ bool taintReg(REG reg)
 							   return false;
 		}
 		std::cout << "\t\t\t" << REG_StringShort(reg) << " is now tainted" << std::endl;
+		// status flag 
+		status_flag = true;
 		return true;
 }
 
@@ -185,7 +215,28 @@ bool removeRegTainted(REG reg)
 							   return false;
 		}
 		std::cout << "\t\t\t" << REG_StringShort(reg) << " is now freed" << std::endl;
+		// status flag 
+		status_flag = true;
 		return true;
+}
+
+VOID report(int mode, UINT64 addr, UINT64 insAddr, std::string insDis, bool isLibc) {
+		if (isLibc) 
+			return;
+		switch (mode) {
+			case MODE_READ:
+					std::cout << std::hex << "[READ in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+					break;
+			case MODE_WRITE:
+					std::cout << std::hex << "[WRITE in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+					break;
+			case MODE_FOLLOW:
+					std::cout << "[FOLLOW]\t\t" << insAddr << ": " << insDis << std::endl;
+					break;	
+			default:
+				cerr << "[*] Internal Error - Mode not found";
+				break;
+		}
 }
 
 VOID ReadMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UINT64 memOp)
@@ -198,14 +249,16 @@ VOID ReadMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UINT
 
 		for(i = addressTainted.begin(); i != addressTainted.end(); i++){
 				if (addr == *i){
-						std::cout << std::hex << "[READ in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+						//std::cout << std::hex << "[READ in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+						report(MODE_READ, addr, insAddr, insDis, addressinlibc(insAddr));
 						taintReg(reg_r);
 						return ;
 				}
 		}
 		/* if mem != tained and reg == taint => free the reg */
 		if (checkAlreadyRegTainted(reg_r)){
-				std::cout << std::hex << "[READ in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+				//std::cout << std::hex << "[READ in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+				report(MODE_READ, addr, insAddr, insDis, addressinlibc(insAddr));
 				removeRegTainted(reg_r);
 		}
 }
@@ -220,14 +273,16 @@ VOID WriteMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UIN
 
 		for(i = addressTainted.begin(); i != addressTainted.end(); i++){
 				if (addr == *i){
-						std::cout << std::hex << "[WRITE in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+						//std::cout << std::hex << "[WRITE in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+						report(MODE_WRITE, addr, insAddr, insDis, addressinlibc(insAddr));
 						if (!REG_valid(reg_r) || !checkAlreadyRegTainted(reg_r))
 								removeMemTainted(addr);
 						return ;
 				}
 		}
 		if (checkAlreadyRegTainted(reg_r)){
-				std::cout << std::hex << "[WRITE in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+				//std::cout << std::hex << "[WRITE in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+				report(MODE_WRITE, addr, insAddr, insDis, addressinlibc(insAddr));
 				addMemTainted(addr);
 		}
 }
@@ -257,8 +312,43 @@ VOID followData(UINT64 insAddr, std::string insDis, REG reg)
 				return;
 
 		if (checkAlreadyRegTainted(reg)){
-				std::cout << "[FOLLOW]\t\t" << insAddr << ": " << insDis << std::endl;
+				report(MODE_FOLLOW, 0xdeadbeef, insAddr, insDis, addressinlibc(insAddr));
 		}
+}
+
+VOID dump_data(UINT64 addr, UINT64 size, char * data_region) {
+		UINT64 i;
+
+		std::cout << "[ADDR - 0x" << std::hex << addr << "]\n" 
+				<< "-- [STRING] : " << data_region << "\n-- [HEX] :\n";
+		
+		for ( i = 0; i < ((size > TRACE_MAX) ? TRACE_MAX : size) ; i++ ) {
+			printf("%02x ", data_region[i]);
+			if ( i != 0 && (i + 1) % 10 == 0 ) {
+					cout << "\n";
+			}
+		}
+		cout << "\n";
+		return;
+}
+
+VOID DisplayStatus(THREADID tid, CONTEXT * ctx) {
+		list<struct range>::iterator i;
+		char * data_region;
+
+		std::cout << "========================STATUS "<< status_ctr << "=====================\n";
+		std::cout << "[IP]\t\t 0x" << static_cast<UINT64>((PIN_GetContextReg(ctx, REG_INST_PTR))) << endl;
+		
+		for(i = bytesTainted.begin(); i != bytesTainted.end(); i++) {
+				//std::cout << "[START] " << ((struct range) *i).start << " ; [SIZE] " << ((struct range) *i).size << endl;
+				data_region = new char[((struct range) *i).size];
+				PIN_SafeCopy(data_region, (void *)((struct range) *i).start, ((struct range) *i).size);
+			    dump_data(((struct range) *i).start, ((struct range) *i).size, data_region);	
+				delete data_region;
+		} 
+		
+		std::cout << "====================END OF STATUS=========================\n";
+		status_ctr++;
 }
 
 VOID Trace(TRACE trace, VOID *v)
@@ -282,6 +372,14 @@ VOID Trace(TRACE trace, VOID *v)
 						IARG_THREAD_ID, IARG_CONTEXT, IARG_END);
 						}
 						*/
+
+						// If a status message hasn't been printed
+						if (status_flag && status_lock) {
+								INS_InsertCall(
+												ins, IPOINT_BEFORE, (AFUNPTR)DisplayStatus,
+												IARG_ADDRINT, IARG_THREAD_ID, IARG_CONTEXT, IARG_END);
+								status_flag = false;
+						}
 
 						if (INS_OperandCount(ins) > 1 && INS_MemoryOperandIsRead(ins, 0) && INS_OperandIsReg(ins, 0)){
 								INS_InsertCall(
@@ -332,7 +430,7 @@ VOID Trace(TRACE trace, VOID *v)
 VOID Syscall_entry(THREADID thread_id, CONTEXT *ctx, SYSCALL_STANDARD std, void *v)
 {
 		unsigned int i;
-		UINT64 start, size;	
+		struct range taint;
 
 		if (PIN_GetSyscallNumber(ctx, std) == __NR_read){
 
@@ -340,14 +438,19 @@ VOID Syscall_entry(THREADID thread_id, CONTEXT *ctx, SYSCALL_STANDARD std, void 
 						return;
 				}
 
-				start = static_cast<UINT64>((PIN_GetSyscallArgument(ctx, std, 1)));
-				size  = static_cast<UINT64>((PIN_GetSyscallArgument(ctx, std, 2)));
+				taint.start = static_cast<UINT64>((PIN_GetSyscallArgument(ctx, std, 1)));
+				taint.size  = static_cast<UINT64>((PIN_GetSyscallArgument(ctx, std, 2)));
 
-				for (i = 0; i < size; i++)
-						addressTainted.push_back(start+i);
+				for (i = 0; i < taint.size; i++)
+						addressTainted.push_back(taint.start+i);
+
+				bytesTainted.push_back(taint);
+
+				// updates status lock
+				status_lock = true;
 
 				std::cout << "[IP]\t\t 0x" << static_cast<UINT64>((PIN_GetContextReg(ctx, REG_INST_PTR))) << endl;		
-				std::cout << "[TAINT]\t\t\tbytes tainted from " << std::hex << "0x" << start << " to 0x" << start+size << " (via read)"<< std::endl;
+				std::cout << "[TAINT]\t\t\tbytes tainted from " << std::hex << "0x" << taint.start << " to 0x" << taint.start + taint.size << " (via read)"<< std::endl;
 		}
 }
 
@@ -368,7 +471,22 @@ int  main(int argc, char *argv[])
 						"# RE-helper trace File\n"
 						"# by Siddharth Muralee (@R3x)\n"
 						"#===============================\n");
+	
+		string status_header = string("#===============================\n"
+						"# RE-helper status File\n"
+						"# by Siddharth Muralee (@R3x)\n"
+						"#===============================\n");
 
+		/* 
+		 *  Initializing constants
+		 */
+
+		status_flag = true;
+		status_lock = false;
+
+ 		/*
+		 * Pin main 
+		 */
 
 		if( PIN_Init(argc,argv) )
 		{
@@ -379,6 +497,9 @@ int  main(int argc, char *argv[])
 
 		TraceFile.open(KnobOutputFile.Value().c_str());
 		TraceFile.write(trace_header.c_str(),trace_header.size());
+
+		StatusFile.open("status.log");
+		StatusFile.write(status_header.c_str(),status_header.size());
 
 		PIN_AddSyscallEntryFunction(Syscall_entry, 0);
 		TRACE_AddInstrumentFunction(Trace, 0);
