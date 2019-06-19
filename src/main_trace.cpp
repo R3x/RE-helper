@@ -13,6 +13,7 @@
 
 std::ofstream TraceFile;
 std::ofstream StatusFile;
+std::ofstream SyscallFile;
 
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
 				"o", "trace.out", "specify trace file name");
@@ -21,6 +22,7 @@ static unsigned int sys_lock;
 static bool status_lock;
 static bool status_flag;
 static unsigned int status_ctr;
+static unsigned int syscall_ctr;
 
 /*
  * STRUCTURES FOR TAINTING
@@ -60,14 +62,14 @@ INT32 Usage()
 
 }
 
-/*
-   static VOID syscallInstructionInstrumentation (THREADID tid, CONTEXT * ctx)
-   {
-   cout << "[IP2]\t\t 0x" << static_cast<UINT64>((PIN_GetContextReg(ctx, REG_INST_PTR))) << endl;
-   cout << "[RDX]\t\t 0x" << static_cast<UINT64>((PIN_GetContextReg(ctx, REG_RDX))) << endl;
-   cout << "[RAX]\t\t 0x" << static_cast<UINT64>((PIN_GetContextReg(ctx, REG_RAX))) << endl;
-   }
-   */
+static VOID syscallInstructionInstrumentation (THREADID tid, CONTEXT * ctx)
+{
+		SyscallFile << "========================SYSCALL "<< syscall_ctr << "=====================\n";
+		SyscallFile << "[IP]\t\t 0x" << static_cast<UINT64>((PIN_GetContextReg(ctx, REG_INST_PTR))) << endl;
+		SyscallFile << "[RAX]\t\t 0x" << static_cast<UINT64>((PIN_GetContextReg(ctx, REG_RAX))) << endl;
+		SyscallFile << "[RDX]\t\t 0x" << static_cast<UINT64>((PIN_GetContextReg(ctx, REG_RDX))) << endl;
+		SyscallFile << "====================END OF SYSCALL=========================\n\n\n";
+}
 
 
 bool checkAlreadyRegTainted(REG reg)
@@ -430,13 +432,11 @@ VOID Trace(TRACE trace, VOID *v)
 				 */
 				for ( INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins))
 				{
-						/*
 						// If instruction is a syscall
 						if (INS_IsSyscall(ins)) {
 								INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR)syscallInstructionInstrumentation,
 								IARG_THREAD_ID, IARG_CONTEXT, IARG_END);
 						}
-						*/
 
 						// If a status message hasn't been printed
 						if (status_flag && status_lock) {
@@ -542,6 +542,11 @@ int  main(int argc, char *argv[])
 						"# by Siddharth Muralee (@R3x)\n"
 						"#===============================\n");
 
+		string syscall_header = string("#===============================\n"
+						"# RE-helper syscall File\n"
+						"# by Siddharth Muralee (@R3x)\n"
+						"#===============================\n\n");
+		
 		/* 
 		 *  Initializing constants
 		 */
@@ -566,6 +571,9 @@ int  main(int argc, char *argv[])
 		StatusFile.open("status.log");
 		StatusFile.write(status_header.c_str(),status_header.size());
 
+		SyscallFile.open("syscall.log");
+		SyscallFile.write(syscall_header.c_str(),status_header.size());
+		
 		PIN_AddSyscallEntryFunction(Syscall_entry, 0);
 		TRACE_AddInstrumentFunction(Trace, 0);
 		PIN_AddFiniFunction(Fini, 0);
