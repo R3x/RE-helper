@@ -5,7 +5,8 @@
 #include <list>
 
 #define TRACE_MAX 100
-
+#define TAINT_BASIC 20
+#define LIBC_BASE 0x70000000000
 /*
  * VARIABLES
  */
@@ -37,10 +38,11 @@ std::list<UINT64> addressTainted;
 std::list<REG> regsTainted;
 
 enum {
-MODE_READ,
-MODE_WRITE,
-MODE_FOLLOW,
-MODE_MAX };
+		MODE_READ,
+		MODE_WRITE,
+		MODE_FOLLOW,
+		MODE_SPREAD,
+		MODE_MAX };
 
 /*
  * PIN BASED FUNCTIONS  
@@ -70,14 +72,14 @@ INT32 Usage()
 
 bool checkAlreadyRegTainted(REG reg)
 {
-		  list<REG>::iterator i;
+		list<REG>::iterator i;
 
-		    for(i = regsTainted.begin(); i != regsTainted.end(); i++){
-					    if (*i == reg){
-								      return true;
-									      }
-						  }
-			  return false;
+		for(i = regsTainted.begin(); i != regsTainted.end(); i++){
+				if (*i == reg){
+						return true;
+				}
+		}
+		return false;
 }
 
 bool addressinlibc(UINT64 addr)
@@ -85,24 +87,44 @@ bool addressinlibc(UINT64 addr)
 		/*
 		 * NOTE - this technique is really crude - figure out a better alternative
 		 */  
-		if (addr > 0x70000000000) {
-			return true;
+		if (addr > LIBC_BASE) {
+				return true;
 		}
 		return false;
 }
 
 VOID removeMemTainted(UINT64 addr)
 {
-		  addressTainted.remove(addr);
-		    std::cout << std::hex << "\t\t\t" << addr << " is now freed" << std::endl;
+		addressTainted.remove(addr);
+		//std::cout << std::hex << "\t\t\t" << addr << " is now freed" << std::endl;
 		// status flag 
 		status_flag = true;
 }
 
 VOID addMemTainted(UINT64 addr)
 {
-		  addressTainted.push_back(addr);
-		    std::cout << std::hex << "\t\t\t" << addr << " is now tainted" << std::endl;
+		bool taint_flag = false;
+		list<struct range>::iterator i;
+		struct range taint;
+		
+		addressTainted.push_back(addr);
+		// If address in range 
+		for(i = bytesTainted.begin(); i != bytesTainted.end(); i++) {
+				if (((struct range) *i).start <= addr && ((struct range) *i).size + ((struct range) *i).start >= addr) {
+					// Address already in tainted region
+					taint_flag = true;
+					break;
+				}
+		}
+	
+		if (taint_flag == false) {
+			// Address hasn't been tainted earlier
+			taint.start = addr;
+			taint.size = TAINT_BASIC;
+			bytesTainted.push_back(taint);
+		}
+
+		std::cout << std::hex << "\t\t\t" << addr << " is now tainted" << std::endl;
 		// status flag 
 		status_flag = true;
 }
@@ -111,7 +133,7 @@ VOID addMemTainted(UINT64 addr)
 bool taintReg(REG reg)
 {
 		if (checkAlreadyRegTainted(reg) == true){
-				std::cout << "\t\t\t" << REG_StringShort(reg) << " is already tainted" << std::endl;
+				//std::cout << "\t\t\t" << REG_StringShort(reg) << " is already tainted" << std::endl;
 				return false;
 		}
 
@@ -158,10 +180,10 @@ bool taintReg(REG reg)
 							   break;
 
 				default:
-							   std::cout << "\t\t\t" << REG_StringShort(reg) << " can't be tainted" << std::endl;
+							   //std::cout << "\t\t\t" << REG_StringShort(reg) << " can't be tainted" << std::endl;
 							   return false;
 		}
-		std::cout << "\t\t\t" << REG_StringShort(reg) << " is now tainted" << std::endl;
+		//std::cout << "\t\t\t" << REG_StringShort(reg) << " is now tainted" << std::endl;
 		// status flag 
 		status_flag = true;
 		return true;
@@ -214,7 +236,7 @@ bool removeRegTainted(REG reg)
 				default:
 							   return false;
 		}
-		std::cout << "\t\t\t" << REG_StringShort(reg) << " is now freed" << std::endl;
+		//std::cout << "\t\t\t" << REG_StringShort(reg) << " is now freed" << std::endl;
 		// status flag 
 		status_flag = true;
 		return true;
@@ -222,23 +244,31 @@ bool removeRegTainted(REG reg)
 
 VOID report(int mode, UINT64 addr, UINT64 insAddr, std::string insDis, bool isLibc) {
 		if (isLibc) 
-			return;
+				return;
 		switch (mode) {
-			case MODE_READ:
-					std::cout << std::hex << "[READ in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
-					break;
-			case MODE_WRITE:
-					std::cout << std::hex << "[WRITE in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
-					break;
-			case MODE_FOLLOW:
-					std::cout << "[FOLLOW]\t\t" << insAddr << ": " << insDis << std::endl;
-					break;	
-			default:
-				cerr << "[*] Internal Error - Mode not found";
-				break;
+				case MODE_READ:
+						std::cout << std::hex << "[READ in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+						break;
+				case MODE_WRITE:
+						std::cout << std::hex << "[WRITE in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
+						break;
+				case MODE_FOLLOW:
+						std::cout << "[FOLLOW]\t\t" << insAddr << ": " << insDis << std::endl;
+						break;	
+				case MODE_SPREAD:
+						std::cout << "[SPREAD]\t\t" << insAddr << ": " << insDis << std::endl;
+						break;	
+				default:
+						cerr << "[*] Internal Error - Mode not found";
+						break;
 		}
 }
 
+/*
+ * Function for load instructions (Instructions that read from memory)
+ * type = mov reg1, [reg2]
+ *
+ */
 VOID ReadMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UINT64 memOp)
 {
 		list<UINT64>::iterator i;
@@ -249,7 +279,6 @@ VOID ReadMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UINT
 
 		for(i = addressTainted.begin(); i != addressTainted.end(); i++){
 				if (addr == *i){
-						//std::cout << std::hex << "[READ in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
 						report(MODE_READ, addr, insAddr, insDis, addressinlibc(insAddr));
 						taintReg(reg_r);
 						return ;
@@ -257,12 +286,16 @@ VOID ReadMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UINT
 		}
 		/* if mem != tained and reg == taint => free the reg */
 		if (checkAlreadyRegTainted(reg_r)){
-				//std::cout << std::hex << "[READ in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
 				report(MODE_READ, addr, insAddr, insDis, addressinlibc(insAddr));
 				removeRegTainted(reg_r);
 		}
 }
 
+/*
+ * Function for store instructions (Instructions that read from memory)
+ * type = mov [reg1], reg2
+ *
+ */
 VOID WriteMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UINT64 memOp)
 {
 		list<UINT64>::iterator i;
@@ -273,15 +306,14 @@ VOID WriteMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UIN
 
 		for(i = addressTainted.begin(); i != addressTainted.end(); i++){
 				if (addr == *i){
-						//std::cout << std::hex << "[WRITE in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
 						report(MODE_WRITE, addr, insAddr, insDis, addressinlibc(insAddr));
 						if (!REG_valid(reg_r) || !checkAlreadyRegTainted(reg_r))
 								removeMemTainted(addr);
 						return ;
 				}
 		}
+
 		if (checkAlreadyRegTainted(reg_r)){
-				//std::cout << std::hex << "[WRITE in " << addr << "]\t" << insAddr << ": " << insDis << std::endl;
 				report(MODE_WRITE, addr, insAddr, insDis, addressinlibc(insAddr));
 				addMemTainted(addr);
 		}
@@ -294,12 +326,12 @@ VOID spreadRegTaint(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_
 
 		if (REG_valid(reg_w)){
 				if (checkAlreadyRegTainted(reg_w) && (!REG_valid(reg_r) || !checkAlreadyRegTainted(reg_r))){
-						std::cout << "[SPREAD]\t\t" << insAddr << ": " << insDis << std::endl;
+						report(MODE_SPREAD, 0xdeadbeef, insAddr, insDis, addressinlibc(insAddr));
 						std::cout << "\t\t\toutput: "<< REG_StringShort(reg_w) << " | input: " << (REG_valid(reg_r) ? REG_StringShort(reg_r) : "constant") << std::endl;
 						removeRegTainted(reg_w);
 				}
 				else if (!checkAlreadyRegTainted(reg_w) && checkAlreadyRegTainted(reg_r)){
-						std::cout << "[SPREAD]\t\t" << insAddr << ": " << insDis << std::endl;
+						report(MODE_SPREAD, 0xdeadbeef, insAddr, insDis, addressinlibc(insAddr));
 						std::cout << "\t\t\toutput: " << REG_StringShort(reg_w) << " | input: "<< REG_StringShort(reg_r) << std::endl;
 						taintReg(reg_w);
 				}
@@ -319,17 +351,44 @@ VOID followData(UINT64 insAddr, std::string insDis, REG reg)
 VOID dump_data(UINT64 addr, UINT64 size, char * data_region) {
 		UINT64 i;
 
-		std::cout << "[ADDR - 0x" << std::hex << addr << "]\n" 
-				<< "-- [STRING] : " << data_region << "\n-- [HEX] :\n";
-		
+		std::cout << "\t[ADDR - 0x" << std::hex << addr << "]\n" 
+				<< "\t-- [STRING] : " << data_region << "\n\t-- [HEX] :\n\t";
+
 		for ( i = 0; i < ((size > TRACE_MAX) ? TRACE_MAX : size) ; i++ ) {
-			printf("%02x ", data_region[i]);
-			if ( i != 0 && (i + 1) % 10 == 0 ) {
-					cout << "\n";
-			}
+				printf("%02x ", data_region[i]);
+				if ( i != 0 && (i + 1) % 10 == 0 ) {
+						cout << "\n\t";
+				}
 		}
 		cout << "\n";
 		return;
+}
+
+VOID dump_registers(CONTEXT * ctx) {
+		list<REG>::iterator i;
+		list<REG>::iterator reg;
+		std::list<REG> regsUnique;
+		bool reg_flag;
+
+        for(i = regsTainted.begin(); i != regsTainted.end(); i++){
+			reg_flag = false;
+			REG x = REG_FullRegName(*i);
+			for(reg = regsUnique.begin(); reg != regsUnique.end(); reg++) {
+					if (*reg == x) {
+						reg_flag = true;
+						break;
+					}
+			}
+			if (reg_flag == false) {
+					regsUnique.push_back(x);
+			}
+		}		
+		for(reg = regsUnique.begin(); reg != regsUnique.end(); reg++) {
+			char buffer[100];
+			sprintf(buffer, "[ %s ] :\t 0x%016lx { String display coming soon }\n",  REG_StringShort(*reg).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, *reg))));
+			//std::cout << "[" << REG_StringShort(*reg) << "]  :\t" << static_cast<UINT64>((PIN_GetContextReg(ctx, *reg))) << endl;
+			std::cout << buffer;
+		}
 }
 
 VOID DisplayStatus(THREADID tid, CONTEXT * ctx) {
@@ -338,15 +397,21 @@ VOID DisplayStatus(THREADID tid, CONTEXT * ctx) {
 
 		std::cout << "========================STATUS "<< status_ctr << "=====================\n";
 		std::cout << "[IP]\t\t 0x" << static_cast<UINT64>((PIN_GetContextReg(ctx, REG_INST_PTR))) << endl;
+
+		std::cout << endl << "## REGISTERS" << endl;
+		dump_registers(ctx);	
+
+		std::cout << endl << "## TAINTED MEMORY" << endl;
 		
 		for(i = bytesTainted.begin(); i != bytesTainted.end(); i++) {
-				//std::cout << "[START] " << ((struct range) *i).start << " ; [SIZE] " << ((struct range) *i).size << endl;
 				data_region = new char[((struct range) *i).size];
+				
 				PIN_SafeCopy(data_region, (void *)((struct range) *i).start, ((struct range) *i).size);
-			    dump_data(((struct range) *i).start, ((struct range) *i).size, data_region);	
+				dump_data(((struct range) *i).start, ((struct range) *i).size, data_region);	
+				
 				delete data_region;
 		} 
-		
+
 		std::cout << "====================END OF STATUS=========================\n";
 		status_ctr++;
 }
@@ -368,8 +433,8 @@ VOID Trace(TRACE trace, VOID *v)
 						/*
 						// If instruction is a syscall
 						if (INS_IsSyscall(ins)) {
-						INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR)syscallInstructionInstrumentation,
-						IARG_THREAD_ID, IARG_CONTEXT, IARG_END);
+								INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR)syscallInstructionInstrumentation,
+								IARG_THREAD_ID, IARG_CONTEXT, IARG_END);
 						}
 						*/
 
@@ -471,7 +536,7 @@ int  main(int argc, char *argv[])
 						"# RE-helper trace File\n"
 						"# by Siddharth Muralee (@R3x)\n"
 						"#===============================\n");
-	
+
 		string status_header = string("#===============================\n"
 						"# RE-helper status File\n"
 						"# by Siddharth Muralee (@R3x)\n"
@@ -484,7 +549,7 @@ int  main(int argc, char *argv[])
 		status_flag = true;
 		status_lock = false;
 
- 		/*
+		/*
 		 * Pin main 
 		 */
 
