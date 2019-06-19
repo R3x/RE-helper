@@ -1,5 +1,7 @@
+*.swp
 pin/
 out/
 pin.log
 out.log
-
+status.log
+syscall.log
