@@ -15,7 +15,7 @@ then
 	exit
 fi
 
-while getopts "smt" opt ;do
+while getopts "smt:" opt ;do
 	case "${opt}" in
 		s)
 			echo "Installing Intel PIN"
@@ -56,7 +56,17 @@ while getopts "smt" opt ;do
 			make
 			mv obj-intel64/ ../out
 			cd ..
-			./pin/pin -t out/main_trace.so -o out.log -- test/basic1/basic1 
+			echo "=================================================="
+			echo "                 Make Completed                  "
+			echo "=================================================="
+			if [ ${OPTARG} = "1" ]; then
+				echo "Now running : ./pin/pin -t out/main_trace.so -o out.log -- test/basic1/basic1"
+				./pin/pin -t out/main_trace.so -o out.log -- test/basic1/basic1
+			fi
+			if [ ${OPTARG} = "2" ]; then
+				echo "Now running : ./pin/pin -t out/main_trace.so -o out.log -- test/basic2/basic2"
+				./pin/pin -t out/main_trace.so -o out.log -- test/basic2/basic2
+			fi
 			;;
 		*)
 			echo "Invalid Option"
