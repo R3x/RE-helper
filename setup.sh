@@ -15,7 +15,7 @@ then
 	exit
 fi
 
-while getopts "smt:" opt ;do
+while getopts "smt:c" opt ;do
 	case "${opt}" in
 		s)
 			echo "Installing Intel PIN"
@@ -67,6 +67,10 @@ while getopts "smt:" opt ;do
 				echo "Now running : ./pin/pin -t out/main_trace.so -o out.log -- test/basic2/basic2"
 				./pin/pin -t out/main_trace.so -o out.log -- test/basic2/basic2
 			fi
+			;;
+		c)
+			rm -rf out/
+			rm status.log out.log syscall.log pin.log
 			;;
 		*)
 			echo "Invalid Option"
