@@ -18,9 +18,15 @@ challenges during CTFs (Capture the Flag) contest.
 	`./pin/pin -t out/main_trace.so -o out.log -- <path/to/executable>`
 - Start racking up points on the scoreboard
 
-## Note
+### Note
 * This repository is still under active development and the commands are subject to change.
 * The tool is written with amd64 architecture kept in mind.
+
+## TODO
+
+A lot of work is left to be done :
+- Improve Tainting
+- Imporve Syscall logging (Add functions, arguments etc) 
 
 # About the Author
 
@@ -28,5 +34,5 @@ This repository is maintaned by **Siddharth Muralee**(@R3x).
 
 Contact :
 - Twitter : @Tr3x\_\_
-- Gmail: siddharth<DOT>muralee<AT>gmail<DOT>com
-- 
+- Gmail: siddharth DOT muralee AT gmail DOT com
+
