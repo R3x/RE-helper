@@ -6,7 +6,8 @@ usage()
 	echo "Options :  "
 	echo "     -s : Setup"
 	echo "     -m : Make"
-	echo "     -t : Test"
+	echo "     -t <test number> : Test"
+	echo "     -c : Clean"
 }
 
 if [ $# -eq 0 ]
@@ -66,6 +67,10 @@ while getopts "smt:c" opt ;do
 			if [ ${OPTARG} = "2" ]; then
 				echo "Now running : ./pin/pin -t out/main_trace.so -o out.log -- test/basic2/basic2"
 				./pin/pin -t out/main_trace.so -o out.log -- test/basic2/basic2
+			fi
+			if [ ${OPTARG} = "3" ]; then
+				echo "Now running : ./pin/pin -t out/main_trace.so -o out.log -- test/basic3/basic3"
+				./pin/pin -t out/main_trace.so -o out.log -- test/basic3/basic3
 			fi
 			;;
 		c)
