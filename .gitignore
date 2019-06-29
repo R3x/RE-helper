@@ -3,5 +3,6 @@ pin/
 out/
 pin.log
 out.log
+pintool.log
 status.log
 syscall.log

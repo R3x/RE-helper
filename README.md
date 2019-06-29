@@ -1,4 +1,4 @@
-# RE-helper
+#RE-helper
 
 This tool is made with the intention of helping with solving Reverse Engineering
 challenges during CTFs (Capture the Flag) contest.
