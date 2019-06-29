@@ -59,6 +59,7 @@ while getopts "smt:c" opt ;do
 			cd ..
 			cd test/
 			make
+			cd ..
 			echo "=================================================="
 			echo "                 Make Completed                  "
 			echo "=================================================="
