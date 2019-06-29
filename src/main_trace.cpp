@@ -1,4 +1,5 @@
 #include "pin.H"
+#include <algorithm>
 #include <asm/unistd.h>
 #include <iostream>
 #include <fstream>
@@ -97,8 +98,20 @@ bool addressinlibc(UINT64 addr)
 
 VOID removeMemTainted(UINT64 addr)
 {
+		list<struct range>::iterator i;
+
 		addressTainted.remove(addr);
 		//std::cout << std::hex << "\t\t\t" << addr << " is now freed" << std::endl;
+
+		// If address in range 
+		for(i = bytesTainted.begin(); i != bytesTainted.end(); i++) {
+				if (((struct range) *i).start <= addr && ((struct range) *i).size + ((struct range) *i).start >= addr) {
+						// Address already in tainted region
+						bytesTainted.erase(i);
+						break;
+				}
+		}
+
 		// status flag 
 		status_flag = true;
 }
@@ -108,25 +121,25 @@ VOID addMemTainted(UINT64 addr)
 		bool taint_flag = false;
 		list<struct range>::iterator i;
 		struct range taint;
-		
+
 		addressTainted.push_back(addr);
 		// If address in range 
 		for(i = bytesTainted.begin(); i != bytesTainted.end(); i++) {
 				if (((struct range) *i).start <= addr && ((struct range) *i).size + ((struct range) *i).start >= addr) {
-					// Address already in tainted region
-					taint_flag = true;
-					break;
+						// Address already in tainted region
+						taint_flag = true;
+						break;
 				}
 		}
-	
+
 		if (taint_flag == false) {
-			// Address hasn't been tainted earlier
-			taint.start = addr;
-			taint.size = TAINT_BASIC;
-			bytesTainted.push_back(taint);
+				// Address hasn't been tainted earlier
+				taint.start = addr;
+				taint.size = TAINT_BASIC;
+				bytesTainted.push_back(taint);
 		}
 
-		std::cout << std::hex << "\t\t\t" << addr << " is now tainted" << std::endl;
+		// std::cout << std::hex << "\t\t\t" << addr << " is now tainted" << std::endl;
 		// status flag 
 		status_flag = true;
 }
@@ -182,7 +195,7 @@ bool taintReg(REG reg)
 							   break;
 
 				default:
-							   //std::cout << "\t\t\t" << REG_StringShort(reg) << " can't be tainted" << std::endl;
+							   std::cout << "\t\t\t" << REG_StringShort(reg) << " can't be tainted" << std::endl;
 							   return false;
 		}
 		//std::cout << "\t\t\t" << REG_StringShort(reg) << " is now tainted" << std::endl;
@@ -271,7 +284,7 @@ VOID report(int mode, UINT64 addr, UINT64 insAddr, std::string insDis, bool isLi
  * type = mov reg1, [reg2]
  *
  */
-VOID ReadMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UINT64 memOp)
+VOID ReadMem(UINT64 insAddr, std::string insDis, UINT64 opCount, REG reg_r, UINT64 memOp)
 {
 		list<UINT64>::iterator i;
 		UINT64 addr = memOp;
@@ -298,7 +311,7 @@ VOID ReadMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UINT
  * type = mov [reg1], reg2
  *
  */
-VOID WriteMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UINT64 memOp)
+VOID WriteMem(UINT64 insAddr, std::string insDis, UINT64 opCount, REG reg_r, UINT64 memOp)
 {
 		list<UINT64>::iterator i;
 		UINT64 addr = memOp;
@@ -306,22 +319,33 @@ VOID WriteMem(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, UIN
 		if (opCount != 2)
 				return;
 
-		for(i = addressTainted.begin(); i != addressTainted.end(); i++){
-				if (addr == *i){
-						report(MODE_WRITE, addr, insAddr, insDis, addressinlibc(insAddr));
-						if (!REG_valid(reg_r) || !checkAlreadyRegTainted(reg_r))
-								removeMemTainted(addr);
-						return ;
-				}
+		   for(i = addressTainted.begin(); i != addressTainted.end(); i++){
+		   if (addr == *i){
+		   report(MODE_WRITE, addr, insAddr, insDis, addressinlibc(insAddr));
+		   if (!REG_valid(reg_r) || !checkAlreadyRegTainted(reg_r))
+		   removeMemTainted(addr);
+		   return ;
+		   }
+		   }
+
+		/*
+		auto itr = std::find(addressTainted.begin(), addressTainted.end(), addr);
+
+		if ( itr != addressTainted.end() ) {
+				report(MODE_WRITE, addr, insAddr, insDis, addressinlibc(insAddr));
+				if (!REG_valid(reg_r) || !checkAlreadyRegTainted(reg_r))
+						removeMemTainted(addr);
+				return ;
 		}
 
+		   */
 		if (checkAlreadyRegTainted(reg_r)){
 				report(MODE_WRITE, addr, insAddr, insDis, addressinlibc(insAddr));
 				addMemTainted(addr);
 		}
 }
 
-VOID spreadRegTaint(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_r, REG reg_w)
+VOID spreadRegTaint(UINT64 insAddr, std::string insDis, UINT64 opCount, REG reg_r, REG reg_w)
 {
 		if (opCount != 2)
 				return;
@@ -329,12 +353,12 @@ VOID spreadRegTaint(UINT64 insAddr, std::string insDis, UINT32 opCount, REG reg_
 		if (REG_valid(reg_w)){
 				if (checkAlreadyRegTainted(reg_w) && (!REG_valid(reg_r) || !checkAlreadyRegTainted(reg_r))){
 						report(MODE_SPREAD, 0xdeadbeef, insAddr, insDis, addressinlibc(insAddr));
-						std::cout << "\t\t\toutput: "<< REG_StringShort(reg_w) << " | input: " << (REG_valid(reg_r) ? REG_StringShort(reg_r) : "constant") << std::endl;
+						// std::cout << "\t\t\toutput: "<< REG_StringShort(reg_w) << " | input: " << (REG_valid(reg_r) ? REG_StringShort(reg_r) : "constant") << std::endl;
 						removeRegTainted(reg_w);
 				}
 				else if (!checkAlreadyRegTainted(reg_w) && checkAlreadyRegTainted(reg_r)){
 						report(MODE_SPREAD, 0xdeadbeef, insAddr, insDis, addressinlibc(insAddr));
-						std::cout << "\t\t\toutput: " << REG_StringShort(reg_w) << " | input: "<< REG_StringShort(reg_r) << std::endl;
+						// std::cout << "\t\t\toutput: " << REG_StringShort(reg_w) << " | input: "<< REG_StringShort(reg_r) << std::endl;
 						taintReg(reg_w);
 				}
 		}
@@ -372,24 +396,24 @@ VOID dump_registers(CONTEXT * ctx) {
 		std::list<REG> regsUnique;
 		bool reg_flag;
 
-        for(i = regsTainted.begin(); i != regsTainted.end(); i++){
-			reg_flag = false;
-			REG x = REG_FullRegName(*i);
-			for(reg = regsUnique.begin(); reg != regsUnique.end(); reg++) {
-					if (*reg == x) {
-						reg_flag = true;
-						break;
-					}
-			}
-			if (reg_flag == false) {
-					regsUnique.push_back(x);
-			}
+		for(i = regsTainted.begin(); i != regsTainted.end(); i++){
+				reg_flag = false;
+				REG x = REG_FullRegName(*i);
+				for(reg = regsUnique.begin(); reg != regsUnique.end(); reg++) {
+						if (*reg == x) {
+								reg_flag = true;
+								break;
+						}
+				}
+				if (reg_flag == false) {
+						regsUnique.push_back(x);
+				}
 		}		
 		for(reg = regsUnique.begin(); reg != regsUnique.end(); reg++) {
-			char buffer[100];
-			sprintf(buffer, "[ %s ] :\t 0x%016lx { String display coming soon }\n",  REG_StringShort(*reg).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, *reg))));
-			//std::cout << "[" << REG_StringShort(*reg) << "]  :\t" << static_cast<UINT64>((PIN_GetContextReg(ctx, *reg))) << endl;
-			std::cout << buffer;
+				char buffer[100];
+				sprintf(buffer, "[ %s ] :\t 0x%016lx { String display coming soon }\n",  REG_StringShort(*reg).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, *reg))));
+				//std::cout << "[" << REG_StringShort(*reg) << "]  :\t" << static_cast<UINT64>((PIN_GetContextReg(ctx, *reg))) << endl;
+				std::cout << buffer;
 		}
 }
 
@@ -404,18 +428,112 @@ VOID DisplayStatus(THREADID tid, CONTEXT * ctx) {
 		dump_registers(ctx);	
 
 		std::cout << endl << "## TAINTED MEMORY" << endl;
-		
+
 		for(i = bytesTainted.begin(); i != bytesTainted.end(); i++) {
 				data_region = new char[((struct range) *i).size];
-				
+
 				PIN_SafeCopy(data_region, (void *)((struct range) *i).start, ((struct range) *i).size);
 				dump_data(((struct range) *i).start, ((struct range) *i).size, data_region);	
-				
+
 				delete data_region;
 		} 
 
-		std::cout << "====================END OF STATUS=========================\n";
+		std::cout << "====================END OF STATUS=========================\n\n\n";
 		status_ctr++;
+}
+
+VOID cmpRegs(UINT64 insAddr, std::string insDis, REG reg1, REG reg2, CONTEXT * ctx) {
+	char buffer1[100];
+	char buffer2[100];
+		
+	if (!REG_valid(reg1) || !REG_valid(reg1)) {
+			cout << "[BUG] Invalid registers!! - please report" << endl;
+			return ;
+	}
+	if (checkAlreadyRegTainted(reg1) && !checkAlreadyRegTainted(reg2)) {
+			cout << "[Tainted Cmp at 0x" << insAddr << " ]\t " << insDis << endl;
+		    sprintf(buffer1, "[ Tainted %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))));
+			cout << buffer1;
+		    sprintf(buffer2, "[ Operand %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg2)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))));	
+			cout << buffer2 << endl;
+	}
+	else if (!checkAlreadyRegTainted(reg1) && checkAlreadyRegTainted(reg2)) {
+			cout << "[Tainted Cmp at 0x" << insAddr << " ]\t " << insDis << endl;
+		    sprintf(buffer1, "[ Operand %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))));
+			cout << buffer1;
+		    sprintf(buffer2, "[ Tainted %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg2)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))));	
+			cout << buffer2 << endl;
+	}
+	else if (!checkAlreadyRegTainted(reg1) && checkAlreadyRegTainted(reg2)) {
+			cout << "[Tainted Cmp at 0x" << insAddr << " ]\t " << insDis << endl;
+		    sprintf(buffer1, "[ Operand %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))));
+			cout << buffer1;
+		    sprintf(buffer2, "[ Tainted %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg2)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))));	
+			cout << buffer2 << endl;
+	}
+}
+
+VOID cmpRegImm(UINT64 insAddr, std::string insDis, REG reg1, UINT64 imm, CONTEXT * ctx) {
+	char buffer[100];
+	if (checkAlreadyRegTainted(reg1)) {
+		cout << "[Tainted Cmp(Register with Immediate) at 0x" << insAddr << " ]\t :" << insDis << endl;
+		    sprintf(buffer, "[ %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))));
+			cout << buffer;
+			// TODO : Handle immediate values better
+			cout << "[Immediate Value] : " << imm << endl << endl;
+	}
+}
+
+VOID cmpMemImm(UINT64 insAddr, std::string insDis, UINT64 memOp, UINT32 size, UINT64 imm, CONTEXT * ctx) {
+	UINT64 addr = memOp;
+	list<UINT64>::iterator i;
+	char * data_region;
+
+	for (i = addressTainted.begin(); i != addressTainted.end(); i++) {
+		if (addr == *i){
+				cout << "[Tainted Cmp(Memory with Immediate) at 0x" << insAddr << "]\t :" << insDis << endl;
+				cout << "[Tainted Memory] : " << endl;
+				data_region = new char[size];
+
+				PIN_SafeCopy(data_region, (void *)addr, size);
+				dump_data(addr, size, data_region);
+
+				cout << "[Immediate Value] : " << imm << endl << endl;
+				
+				delete data_region;
+		}
+	}
+}
+
+VOID cmpMemReg(UINT64 insAddr, std::string insDis, UINT64 memOp, UINT32 size, REG reg1, CONTEXT * ctx) {
+	UINT64 addr = memOp;
+	bool isMemoryTainted = false;
+	bool isRegTainted = false;
+	list<UINT64>::iterator i;
+	char * data_region;
+	char buffer[100];
+
+	for (i = addressTainted.begin(); i != addressTainted.end(); i++) { 
+		if (addr == *i){
+			isMemoryTainted = true;	
+		}
+	}
+	if (checkAlreadyRegTainted(reg1)) {
+			isRegTainted = true;
+	}
+	if (isRegTainted || isMemoryTainted) {
+			cout << "[Tainted Cmp(Memory with Register) at  0x" << insAddr << "]\t : " << insDis << endl;
+		    sprintf(buffer, "[ %s %s ] :\t 0x%016lx { String display coming soon }\n", ((isRegTainted) ? "Tainted" : "Untainted" ) ,REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))));
+		data_region = new char[size];
+
+		cout << "[" << ((isMemoryTainted) ? "Tainted" : "Untainted") << "Memory] : " << endl;
+		
+		PIN_SafeCopy(data_region, (void *)addr, size);
+		dump_data(addr, size, data_region);
+		
+
+		delete data_region;
+	}
 }
 
 VOID Trace(TRACE trace, VOID *v)
@@ -432,10 +550,103 @@ VOID Trace(TRACE trace, VOID *v)
 				 */
 				for ( INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins))
 				{
+						// If cmp instruction
+						if (INS_Disassemble(ins).find("cmp") != std::string::npos && !addressinlibc(INS_Address(ins))) {
+								// Cover all sub cases for cmp
+								if (INS_OperandIsReg(ins, 0) && INS_OperandIsReg(ins, 1)) {
+									INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)cmpRegs,
+												IARG_ADDRINT, INS_Address(ins),
+												IARG_PTR, new string(INS_Disassemble(ins)),
+												IARG_UINT64, INS_OperandReg(ins, 0),
+												IARG_UINT64, INS_OperandReg(ins, 1),
+												IARG_CONTEXT, IARG_END);			
+								}
+								else if (INS_OperandIsReg(ins, 0) && INS_OperandIsImmediate(ins, 1)) {
+									INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)cmpRegImm,
+												IARG_ADDRINT, INS_Address(ins),
+												IARG_PTR, new string(INS_Disassemble(ins)),
+												IARG_UINT64, INS_OperandReg(ins, 0),
+												IARG_UINT64, INS_OperandImmediate(ins, 1),
+												IARG_CONTEXT, IARG_END);			
+								}
+								else if (INS_OperandIsMemory(ins, 0) && INS_OperandIsImmediate(ins, 1)) {
+									if (INS_hasKnownMemorySize(ins)) {
+											INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)cmpMemImm,
+														IARG_ADDRINT, INS_Address(ins),
+														IARG_PTR, new string(INS_Disassemble(ins)),
+														IARG_MEMORYOP_EA, 0,
+														IARG_MEMORYREAD_SIZE,
+														IARG_UINT64, INS_OperandImmediate(ins, 1),
+														IARG_CONTEXT, IARG_END);			
+									}
+									else {
+											INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)cmpMemImm,
+														IARG_ADDRINT, INS_Address(ins),
+														IARG_PTR, new string(INS_Disassemble(ins)),
+														IARG_MEMORYOP_EA, 0,
+														IARG_UINT32, 16,
+														IARG_UINT64, INS_OperandImmediate(ins, 1),
+														IARG_CONTEXT, IARG_END);			
+
+									}
+								}
+								else if (INS_OperandIsMemory(ins, 0) && INS_OperandIsReg(ins, 1)) {
+									if (INS_hasKnownMemorySize(ins)) {
+											INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)cmpMemReg,
+														IARG_ADDRINT, INS_Address(ins),
+														IARG_PTR, new string(INS_Disassemble(ins)),
+														IARG_MEMORYOP_EA, 0,
+														IARG_MEMORYREAD_SIZE,
+														IARG_UINT64, INS_OperandReg(ins, 1),
+														IARG_CONTEXT, IARG_END);			
+									}
+									else {
+											INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)cmpMemReg,
+														IARG_ADDRINT, INS_Address(ins),
+														IARG_PTR, new string(INS_Disassemble(ins)),
+														IARG_MEMORYOP_EA, 0,
+														IARG_UINT32, 16,
+														IARG_UINT64, INS_OperandReg(ins, 1),
+														IARG_CONTEXT, IARG_END);			
+
+									}
+								}
+								else if (INS_OperandIsMemory(ins, 1) && INS_OperandIsReg(ins, 0)) {
+									if (INS_hasKnownMemorySize(ins)) {
+											INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)cmpMemReg,
+														IARG_ADDRINT, INS_Address(ins),
+														IARG_PTR, new string(INS_Disassemble(ins)),
+														IARG_MEMORYOP_EA, 0,
+														IARG_MEMORYREAD_SIZE,
+														IARG_UINT64, INS_OperandReg(ins, 0),
+														IARG_CONTEXT, IARG_END);			
+									}
+									else {
+											INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)cmpMemReg,
+														IARG_ADDRINT, INS_Address(ins),
+														IARG_PTR, new string(INS_Disassemble(ins)),
+														IARG_MEMORYOP_EA, 0,
+														IARG_UINT32, 16,
+														IARG_UINT64, INS_OperandReg(ins, 0),
+														IARG_CONTEXT, IARG_END);			
+
+									}
+								}
+								else {
+									cout << "[BUG] Undefined type of cmp statement : " << INS_Disassemble(ins) << " : please report" << endl;
+								}
+								/*
+								INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)CmpInstruction,
+												IARG_ADDRINT, INS_ADDRESS(ins),
+												IARG_PTR, new string(INS_Disassemble(ins)),
+												IARG_UINT64, INS_OperandCount(ins),
+												IARG_UINT64, INS_OperandReg(ins, 0),
+								*/
+						}
 						// If instruction is a syscall
 						if (INS_IsSyscall(ins)) {
 								INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR)syscallInstructionInstrumentation,
-								IARG_THREAD_ID, IARG_CONTEXT, IARG_END);
+												IARG_THREAD_ID, IARG_CONTEXT, IARG_END);
 						}
 
 						// If a status message hasn't been printed
@@ -451,8 +662,8 @@ VOID Trace(TRACE trace, VOID *v)
 												ins, IPOINT_BEFORE, (AFUNPTR)ReadMem,
 												IARG_ADDRINT, INS_Address(ins),
 												IARG_PTR, new string(INS_Disassemble(ins)),
-												IARG_UINT32, INS_OperandCount(ins),
-												IARG_UINT32, INS_OperandReg(ins, 0),
+												IARG_UINT64, INS_OperandCount(ins),
+												IARG_UINT64, INS_OperandReg(ins, 0),
 												IARG_MEMORYOP_EA, 0,
 												IARG_END);
 						}
@@ -461,8 +672,8 @@ VOID Trace(TRACE trace, VOID *v)
 												ins, IPOINT_BEFORE, (AFUNPTR)WriteMem,
 												IARG_ADDRINT, INS_Address(ins),
 												IARG_PTR, new string(INS_Disassemble(ins)),
-												IARG_UINT32, INS_OperandCount(ins),
-												IARG_UINT32, INS_OperandReg(ins, 1),
+												IARG_UINT64, INS_OperandCount(ins),
+												IARG_UINT64, INS_OperandReg(ins, 1),
 												IARG_MEMORYOP_EA, 0,
 												IARG_END);
 						}
@@ -471,9 +682,9 @@ VOID Trace(TRACE trace, VOID *v)
 												ins, IPOINT_BEFORE, (AFUNPTR)spreadRegTaint,
 												IARG_ADDRINT, INS_Address(ins),
 												IARG_PTR, new string(INS_Disassemble(ins)),
-												IARG_UINT32, INS_OperandCount(ins),
-												IARG_UINT32, INS_RegR(ins, 0),
-												IARG_UINT32, INS_RegW(ins, 0),
+												IARG_UINT64, INS_OperandCount(ins),
+												IARG_UINT64, INS_RegR(ins, 0),
+												IARG_UINT64, INS_RegW(ins, 0),
 												IARG_END);
 						}
 
@@ -482,7 +693,7 @@ VOID Trace(TRACE trace, VOID *v)
 												ins, IPOINT_BEFORE, (AFUNPTR)followData,
 												IARG_ADDRINT, INS_Address(ins),
 												IARG_PTR, new string(INS_Disassemble(ins)),
-												IARG_UINT32, INS_RegR(ins, 0),
+												IARG_UINT64, INS_RegR(ins, 0),
 												IARG_END);
 						}
 						traceString +=  "%" + INS_Disassemble(ins) + "\n";
@@ -545,8 +756,8 @@ int  main(int argc, char *argv[])
 		string syscall_header = string("#===============================\n"
 						"# RE-helper syscall File\n"
 						"# by Siddharth Muralee (@R3x)\n"
-						"#===============================\n\n");
-		
+						"#===============================\n");
+
 		/* 
 		 *  Initializing constants
 		 */
@@ -573,7 +784,7 @@ int  main(int argc, char *argv[])
 
 		SyscallFile.open("syscall.log");
 		SyscallFile.write(syscall_header.c_str(),status_header.size());
-		
+
 		PIN_AddSyscallEntryFunction(Syscall_entry, 0);
 		TRACE_AddInstrumentFunction(Trace, 0);
 		PIN_AddFiniFunction(Fini, 0);
