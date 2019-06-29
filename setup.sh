@@ -57,25 +57,30 @@ while getopts "smt:c" opt ;do
 			make
 			mv obj-intel64/ ../out
 			cd ..
+			cd test/
+			make
 			echo "=================================================="
 			echo "                 Make Completed                  "
 			echo "=================================================="
 			if [ ${OPTARG} = "1" ]; then
 				echo "Now running : ./pin/pin -t out/main_trace.so -o out.log -- test/basic1/basic1"
-				./pin/pin -t out/main_trace.so -o out.log -- test/basic1/basic1
+				./pin/pin -t out/main_trace.so -o out.log -- test/basic1
 			fi
 			if [ ${OPTARG} = "2" ]; then
 				echo "Now running : ./pin/pin -t out/main_trace.so -o out.log -- test/basic2/basic2"
-				./pin/pin -t out/main_trace.so -o out.log -- test/basic2/basic2
+				./pin/pin -t out/main_trace.so -o out.log -- test/basic2
 			fi
 			if [ ${OPTARG} = "3" ]; then
 				echo "Now running : ./pin/pin -t out/main_trace.so -o out.log -- test/basic3/basic3"
-				./pin/pin -t out/main_trace.so -o out.log -- test/basic3/basic3
+				./pin/pin -t out/main_trace.so -o out.log -- test/basic3
 			fi
 			;;
 		c)
 			rm -rf out/
-			rm status.log out.log syscall.log pin.log
+			rm *.log
+			cd test
+			make clean
+			cd ..
 			;;
 		*)
 			echo "Invalid Option"
