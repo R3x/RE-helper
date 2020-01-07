@@ -1,4 +1,4 @@
-#RE-helper
+# RE-helper
 
 This tool is made with the intention of helping with solving Reverse Engineering
 challenges during CTFs (Capture the Flag) contest.
@@ -30,9 +30,13 @@ A lot of work is left to be done :
 
 # About the Author
 
-This repository is maintaned by **Siddharth Muralee**(@R3x).
+This repository is maintaned by
 
-Contact :
+**Siddharth Muralee**(@R3x).
 - Twitter : @Tr3x\_\_
-- Gmail: siddharth DOT muralee AT gmail DOT com
 
+**Ayushi Sharma**(@Ayushi)/
+- Twitter : @Ais2397Ayushi
+
+**Aditya Vardhan Padala**(@silverf3lix)
+- Twitter : @silverf3lix
