@@ -28,14 +28,14 @@ A lot of work is left to be done :
 - Improve Tainting
 - Imporve Syscall logging (Add functions, arguments etc) 
 
-# About the Author
+# About the Authors
 
 This repository is maintaned by
 
-**Siddharth Muralee**(@R3x).
+**Siddharth Muralee**(@R3x)
 - Twitter : @Tr3x\_\_
 
-**Ayushi Sharma**(@Ayushi)/
+**Ayushi Sharma**(@Ayushi)
 - Twitter : @Ais2397Ayushi
 
 **Aditya Vardhan Padala**(@silverf3lix)
