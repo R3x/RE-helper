@@ -5,6 +5,7 @@
 #include <fstream>
 #include <list>
 
+
 #define TRACE_MAX 100
 #define TAINT_BASIC 20
 #define LIBC_BASE 0x70000000000
@@ -390,6 +391,31 @@ VOID dump_data(UINT64 addr, UINT64 size, char * data_region) {
 		return;
 }
 
+string hexToASCII(string hex) 
+{ 
+	// initialize the ASCII code string as empty. 
+	string ascii = ""; 
+	for (size_t i = 2; i < hex.length(); i += 2) 
+	{ 
+		// extract two characters from hex string 
+		string part = hex.substr(i, 2); 
+		// change it into base 16 and 
+		// typecast as the character 
+		char ch = strtoul(part.c_str(), nullptr, 16);
+		if (ch>=32 && ch<=126) {
+			// add this char to final ASCII string 
+			ascii += ch;
+		}
+		else if (ch == 10) {
+			ascii += "\n";
+		}
+		else {
+			return ascii;
+		}		
+	} 
+	return ascii; 
+}
+
 VOID dump_registers(CONTEXT * ctx) {
 		list<REG>::iterator i;
 		list<REG>::iterator reg;
@@ -411,7 +437,7 @@ VOID dump_registers(CONTEXT * ctx) {
 		}		
 		for(reg = regsUnique.begin(); reg != regsUnique.end(); reg++) {
 				char buffer[100];
-				sprintf(buffer, "[ %s ] :\t 0x%016lx { String display coming soon }\n",  REG_StringShort(*reg).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, *reg))));
+				sprintf(buffer, "[ %s ] :\t 0x%016lx \"\x1B[32m%s\033[0;37m\"\n",  REG_StringShort(*reg).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, *reg))), (hexToASCII(StringFromUint64(__builtin_bswap64(static_cast<UINT64>((PIN_GetContextReg(ctx, *reg))))))).c_str());
 				//std::cout << "[" << REG_StringShort(*reg) << "]  :\t" << static_cast<UINT64>((PIN_GetContextReg(ctx, *reg))) << endl;
 				std::cout << buffer;
 		}
@@ -452,23 +478,23 @@ VOID cmpRegs(UINT64 insAddr, std::string insDis, REG reg1, REG reg2, CONTEXT * c
 	}
 	if (checkAlreadyRegTainted(reg1) && !checkAlreadyRegTainted(reg2)) {
 			cout << "[Tainted Cmp at 0x" << insAddr << " ]\t " << insDis << endl;
-		    sprintf(buffer1, "[ Tainted %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))));
+		    sprintf(buffer1, "[ Tainted %s ] :\t 0x%016lx \"\x1B[32m%s\033[0;37m\"\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))), (hexToASCII(StringFromUint64(__builtin_bswap64(static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))))))).c_str());
 			cout << buffer1;
-		    sprintf(buffer2, "[ Operand %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg2)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))));	
+		    sprintf(buffer2, "[ Operand %s ] :\t 0x%016lx \"\x1B[32m%s\033[0;37m\"\n", REG_StringShort(REG_FullRegName(reg2)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))), (hexToASCII(StringFromUint64(__builtin_bswap64(static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))))))).c_str());	
 			cout << buffer2 << endl;
 	}
 	else if (!checkAlreadyRegTainted(reg1) && checkAlreadyRegTainted(reg2)) {
 			cout << "[Tainted Cmp at 0x" << insAddr << " ]\t " << insDis << endl;
-		    sprintf(buffer1, "[ Operand %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))));
+		    sprintf(buffer1, "[ Operand %s ] :\t 0x%016lx \"\x1B[32m%s\033[0;37m\"\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))), (hexToASCII(StringFromUint64(__builtin_bswap64(static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))))))).c_str());
 			cout << buffer1;
-		    sprintf(buffer2, "[ Tainted %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg2)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))));	
+		    sprintf(buffer2, "[ Tainted %s ] :\t 0x%016lx \"\x1B[32m%s\033[0;37m\"\n", REG_StringShort(REG_FullRegName(reg2)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))), (hexToASCII(StringFromUint64(__builtin_bswap64(static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))))))).c_str());	
 			cout << buffer2 << endl;
 	}
 	else if (!checkAlreadyRegTainted(reg1) && checkAlreadyRegTainted(reg2)) {
 			cout << "[Tainted Cmp at 0x" << insAddr << " ]\t " << insDis << endl;
-		    sprintf(buffer1, "[ Operand %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))));
+		    sprintf(buffer1, "[ Operand %s ] :\t 0x%016lx \"\x1B[32m%s\033[0;37m\"\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))), (hexToASCII(StringFromUint64(__builtin_bswap64(static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))))))).c_str());
 			cout << buffer1;
-		    sprintf(buffer2, "[ Tainted %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg2)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))));	
+		    sprintf(buffer2, "[ Tainted %s ] :\t 0x%016lx \"\x1B[32m%s\033[0;37m\"\n", REG_StringShort(REG_FullRegName(reg2)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg2)))), (hexToASCII(StringFromUint64(__builtin_bswap64(static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))))))).c_str());	
 			cout << buffer2 << endl;
 	}
 }
@@ -477,7 +503,7 @@ VOID cmpRegImm(UINT64 insAddr, std::string insDis, REG reg1, UINT64 imm, CONTEXT
 	char buffer[100];
 	if (checkAlreadyRegTainted(reg1)) {
 		cout << "[Tainted Cmp(Register with Immediate) at 0x" << insAddr << " ]\t :" << insDis << endl;
-		    sprintf(buffer, "[ %s ] :\t 0x%016lx { String display coming soon }\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))));
+		    sprintf(buffer, "[ %s ] :\t 0x%016lx \"\x1B[32m%s\033[0;37m\"\n", REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))), (hexToASCII(StringFromUint64(__builtin_bswap64(static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))))))).c_str());
 			cout << buffer;
 			// TODO : Handle immediate values better
 			cout << "[Immediate Value] : " << imm << endl << endl;
@@ -523,7 +549,7 @@ VOID cmpMemReg(UINT64 insAddr, std::string insDis, UINT64 memOp, UINT32 size, RE
 	}
 	if (isRegTainted || isMemoryTainted) {
 			cout << "[Tainted Cmp(Memory with Register) at  0x" << insAddr << "]\t : " << insDis << endl;
-		    sprintf(buffer, "[ %s %s ] :\t 0x%016lx { String display coming soon }\n", ((isRegTainted) ? "Tainted" : "Untainted" ) ,REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))));
+		    sprintf(buffer, "[ %s %s ] :\t 0x%016lx \"\x1B[32m%s\033[0;37m\"\n", ((isRegTainted) ? "Tainted" : "Untainted" ) ,REG_StringShort(REG_FullRegName(reg1)).c_str(), static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))), (hexToASCII(StringFromUint64(__builtin_bswap64(static_cast<UINT64>((PIN_GetContextReg(ctx, REG_FullRegName(reg1)))))))).c_str());
 		data_region = new char[size];
 
 		cout << "[" << ((isMemoryTainted) ? "Tainted" : "Untainted") << "Memory] : " << endl;
